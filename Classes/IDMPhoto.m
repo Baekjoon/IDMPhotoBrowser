@@ -36,7 +36,8 @@
 // Properties
 @synthesize underlyingImage = _underlyingImage, 
 photoURL = _photoURL,
-caption = _caption;
+caption = _caption,
+photoAsset = _photoAsset;
 
 #pragma mark Class Methods
 
@@ -50,6 +51,10 @@ caption = _caption;
 
 + (IDMPhoto *)photoWithURL:(NSURL *)url {
 	return [[IDMPhoto alloc] initWithURL:url];
+}
+
++ (IDMPhoto *)photoWithAsset:(ALAsset *)asset {
+    return [[IDMPhoto alloc] initWithAsset:asset];
 }
 
 + (NSArray *)photosWithImages:(NSArray *)imagesArray {
@@ -95,6 +100,19 @@ caption = _caption;
     return photos;
 }
 
++(NSArray *)photosWithAssets:(NSArray *)assetsArray {
+    NSMutableArray *photos = [NSMutableArray arrayWithCapacity:assetsArray.count];
+    
+    for (ALAsset *asset in assetsArray) {
+        if ([asset isKindOfClass:[ALAsset class]]) {
+            IDMPhoto *photo = [IDMPhoto photoWithAsset:asset];
+            [photos addObject:photo];
+        }
+    }
+    
+    return photos;
+}
+
 #pragma mark NSObject
 
 - (id)initWithImage:(UIImage *)image {
@@ -116,6 +134,13 @@ caption = _caption;
 		_photoURL = [url copy];
 	}
 	return self;
+}
+
+- (id)initWithAsset:(ALAsset *)asset {
+    if ((self = [super init])) {
+        _photoAsset = asset;
+    }
+    return self;
 }
 
 #pragma mark IDMPhoto Protocol Methods
@@ -155,6 +180,8 @@ caption = _caption;
             }];
             
             [[NSOperationQueue mainQueue] addOperation:op];
+        } else if (_photoAsset) {
+            [self performSelectorInBackground:@selector(loadImageFromAssetAsync) withObject:nil];
         } else {
             // Failed - no source
             self.underlyingImage = nil;
@@ -167,7 +194,7 @@ caption = _caption;
 - (void)unloadUnderlyingImage {
     _loadingInProgress = NO;
 
-	if (self.underlyingImage && (_photoPath || _photoURL)) {
+	if (self.underlyingImage && (_photoPath || _photoURL || _photoAsset)) {
 		self.underlyingImage = nil;
 	}
 }
@@ -272,6 +299,25 @@ caption = _caption;
     @autoreleasepool {
         @try {
             self.underlyingImage = [UIImage imageWithContentsOfFile:_photoPath];
+            if (!_underlyingImage) {
+                //IDMLog(@"Error loading photo from path: %@", _photoPath);
+            }
+        } @finally {
+            self.underlyingImage = [self decodedImageWithImage: self.underlyingImage];
+            [self performSelectorOnMainThread:@selector(imageLoadingComplete) withObject:nil waitUntilDone:NO];
+        }
+    }
+}
+
+- (void)loadImageFromAssetAsync {
+    @autoreleasepool {
+        @try {
+            UIImageOrientation orientation = UIImageOrientationUp;
+            NSNumber* orientationValue = [_photoAsset valueForProperty:@"ALAssetPropertyOrientation"];
+            if (orientationValue != nil) {
+                orientation = [orientationValue intValue];
+            }
+            self.underlyingImage = [UIImage imageWithCGImage:_photoAsset.defaultRepresentation.fullResolutionImage scale:_photoAsset.defaultRepresentation.scale orientation:orientation];
             if (!_underlyingImage) {
                 //IDMLog(@"Error loading photo from path: %@", _photoPath);
             }
